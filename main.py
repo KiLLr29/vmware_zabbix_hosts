@@ -6,7 +6,7 @@ from pyzabbix import ZabbixAPI
 from collections import defaultdict
 
 # Импортируем настройки из файла config.py
-from config_example import VCENTER_HOST, VCENTER_USER, VCENTER_PASSWORD, ZABBIX_URL, ZABBIX_USER, ZABBIX_PASSWORD
+from config import VCENTER_HOST, VCENTER_USER, VCENTER_PASSWORD, ZABBIX_URL, ZABBIX_USER, ZABBIX_PASSWORD
 
 
 def get_vms_from_vcenter():
