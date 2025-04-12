@@ -18,14 +18,18 @@ def get_vms_from_vcenter():
     context.check_hostname = False
     context.verify_mode = ssl.CERT_NONE
 
-    # Подключаемся к VCenter
-    si = SmartConnect(
-        host=VCENTER_HOST,
-        user=VCENTER_USER,
-        pwd=VCENTER_PASSWORD,
-        sslContext=context
-    )
-    atexit.register(Disconnect, si)
+    try:
+        # Подключаемся к VCenter
+        si = SmartConnect(
+            host=VCENTER_HOST,
+            user=VCENTER_USER,
+            pwd=VCENTER_PASSWORD,
+            sslContext=context
+        )
+        atexit.register(Disconnect, si)
+    except Exception as e:
+        print(f"Не удалось подключиться к VCenter. Ошибка: {e}")
+        return []
 
     # Получаем корневой объект
     content = si.RetrieveContent()
