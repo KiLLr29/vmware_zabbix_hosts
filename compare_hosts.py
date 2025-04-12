@@ -21,6 +21,7 @@ def find_missing_hosts(vcenter_vms, zabbix_hosts):
     exclude_patterns = [
         r"_REP$",  # Хосты, заканчивающиеся на "_REP"
         r"^temp-",  # Хосты, начинающиеся на "temp-"
+        r"^TEMP-", # Хосты, начинающиеся на "TEMP-"
     ]
 
     for vm in vcenter_vms:

@@ -11,6 +11,7 @@ from config import VCENTER_HOST, VCENTER_USER, VCENTER_PASSWORD
 def get_vms_from_vcenter():
     """
     Получает список виртуальных машин и их IP-адресов из VCenter.
+    Экспортирует только включенные хосты (poweredOn).
     """
     # Создаем контекст SSL для игнорирования ошибок сертификатов
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
@@ -39,9 +40,17 @@ def get_vms_from_vcenter():
     vms = []
     for vm in container.view:
         vm_name = vm.name
+        vm_power_state = vm.runtime.powerState  # Состояние питания хоста
         vm_ip = None
+
+        # Проверяем, что хост включен (poweredOn)
+        if vm_power_state != "poweredOn":
+            continue  # Пропускаем выключенные хосты
+
+        # Получаем IP-адрес, если он доступен
         if vm.guest and vm.guest.ipAddress:
             vm_ip = vm.guest.ipAddress
+
         vms.append({"name": vm_name, "ip": vm_ip})
 
     return vms
