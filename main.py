@@ -14,7 +14,8 @@ def get_vms_from_vcenter():
     Получает список виртуальных машин и их IP-адресов из VCenter.
     """
     # Создаем контекст SSL для игнорирования ошибок сертификатов
-    context = ssl.SSLContext(ssl.PROTOCOL_TLS)
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    context.check_hostname = False
     context.verify_mode = ssl.CERT_NONE
 
     # Подключаемся к VCenter
