@@ -1,4 +1,5 @@
 import atexit
+import json
 from pyVim.connect import SmartConnect, Disconnect
 from pyVmomi import vim
 import ssl
@@ -55,13 +56,14 @@ def get_hosts_from_zabbix():
     zapi = ZabbixAPI(ZABBIX_URL)
     zapi.login(ZABBIX_USER, ZABBIX_PASSWORD)
 
-    hosts = zapi.host.get(output=["host", "interfaces"])
+    # Получаем список хостов и их интерфейсов
+    hosts = zapi.host.get(output=["host"], selectInterfaces=["ip"])
     zabbix_hosts = defaultdict(list)
 
     for host in hosts:
         hostname = host["host"]
-        interfaces = host["interfaces"]
-        ip_addresses = [interface["ip"] for interface in interfaces]
+        interfaces = host.get("interfaces", [])  # Используем .get() для безопасного доступа
+        ip_addresses = [interface["ip"] for interface in interfaces if "ip" in interface]
         zabbix_hosts[hostname] = ip_addresses
 
     return zabbix_hosts
@@ -84,12 +86,23 @@ def find_missing_hosts(vcenter_vms, zabbix_hosts):
     return missing_hosts
 
 
+def save_to_file(data, filename):
+    """
+    Сохраняет данные в файл в формате JSON.
+    """
+    with open(filename, "w") as f:
+        json.dump(data, f, indent=4, ensure_ascii=False)
+    print(f"Данные успешно сохранены в файл: {filename}")
+
+
 if __name__ == "__main__":
     # Получаем данные из VCenter
     vcenter_vms = get_vms_from_vcenter()
+    save_to_file(vcenter_vms, "vcenter_vms.json")
 
     # Получаем данные из Zabbix
     zabbix_hosts = get_hosts_from_zabbix()
+    save_to_file(zabbix_hosts, "zabbix_hosts.json")
 
     # Находим хосты, которых нет в Zabbix
     missing_hosts = find_missing_hosts(vcenter_vms, zabbix_hosts)
@@ -98,3 +111,6 @@ if __name__ == "__main__":
     print("Хосты, которых нет в Zabbix:")
     for host in missing_hosts:
         print(f"Имя: {host['name']}, IP: {host['ip']}")
+
+    # Сохраняем результат сравнения в файл
+    save_to_file(missing_hosts, "missing_hosts.json")
