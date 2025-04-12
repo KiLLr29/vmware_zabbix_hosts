@@ -10,10 +10,22 @@ def load_from_file(filename):
     return data
 
 
+def normalize_hostname(vcenter_name):
+    """
+    Нормализует имя хоста из VCenter для сравнения с именами в Zabbix.
+    Например, преобразует 'VW-SWX002-a.miller' в 'SWX002'.
+    """
+    # Используем регулярное выражение для извлечения базового имени
+    match = re.search(r"VW-(\w+)-", vcenter_name)
+    if match:
+        return match.group(1)  # Возвращаем часть, соответствующую шаблону
+    return vcenter_name  # Если шаблон не найден, возвращаем исходное имя
+
+
 def find_missing_hosts(vcenter_vms, zabbix_hosts):
     """
     Сравнивает данные из VCenter и Zabbix и возвращает список хостов, которых нет в Zabbix.
-    Применяет фильтрацию для исключения ненужных хостов из VCenter.
+    Применяет фильтрацию и нормализацию имен для корректного сравнения.
     """
     missing_hosts = []
 
@@ -21,20 +33,22 @@ def find_missing_hosts(vcenter_vms, zabbix_hosts):
     exclude_patterns = [
         r"_REP$",  # Хосты, заканчивающиеся на "_REP"
         r"^temp-",  # Хосты, начинающиеся на "temp-"
-        r"^TEMP-", # Хосты, начинающиеся на "TEMP-"
     ]
 
     for vm in vcenter_vms:
         vm_name = vm["name"]
         vm_ip = vm["ip"]
 
+        # Применяем нормализацию имени для сравнения
+        normalized_name = normalize_hostname(vm_name)
+
         # Проверяем, соответствует ли имя хоста фильтру исключения
         if any(re.search(pattern, vm_name) for pattern in exclude_patterns):
             continue  # Пропускаем хост, если он соответствует фильтру
 
         # Проверяем, есть ли хост с таким именем или IP в Zabbix
-        if vm_name not in zabbix_hosts and (not vm_ip or vm_ip not in [ip for ips in zabbix_hosts.values() for ip in ips]):
-            missing_hosts.append(vm)
+        if normalized_name not in zabbix_hosts and (not vm_ip or vm_ip not in [ip for ips in zabbix_hosts.values() for ip in ips]):
+            missing_hosts.append({"name": vm_name, "normalized_name": normalized_name, "ip": vm_ip})
 
     return missing_hosts
 
@@ -59,7 +73,7 @@ if __name__ == "__main__":
     # Выводим результат
     print("Хосты, которых нет в Zabbix:")
     for host in missing_hosts:
-        print(f"Имя: {host['name']}, IP: {host['ip']}")
+        print(f"Имя: {host['name']} (Нормализованное имя: {host['normalized_name']}), IP: {host['ip']}")
 
     # Сохраняем результат сравнения в файл
     save_to_file(missing_hosts, "missing_hosts.json")
