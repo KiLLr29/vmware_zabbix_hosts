@@ -36,8 +36,9 @@ def find_missing_hosts(vcenter_vms, zabbix_hosts):
     ]
 
     for vm in vcenter_vms:
-        vm_name = vm["name"]
-        vm_ip = vm["ip"]
+        vm_name = vm["host"]  # Имя хоста из VCenter
+        vm_ip = vm["ip"]      # IP-адрес хоста из VCenter
+        vm_status = vm["status"]  # Состояние питания хоста
 
         # Применяем нормализацию имени для сравнения
         normalized_name = normalize_hostname(vm_name)
@@ -48,7 +49,12 @@ def find_missing_hosts(vcenter_vms, zabbix_hosts):
 
         # Проверяем, есть ли хост с таким именем или IP в Zabbix
         if normalized_name not in zabbix_hosts and (not vm_ip or vm_ip not in [ip for ips in zabbix_hosts.values() for ip in ips]):
-            missing_hosts.append({"name": vm_name, "normalized_name": normalized_name, "ip": vm_ip})
+            missing_hosts.append({
+                "name": vm_name,
+                "normalized_name": normalized_name,
+                "ip": vm_ip,
+                "status": vm_status
+            })
 
     return missing_hosts
 
@@ -73,7 +79,7 @@ if __name__ == "__main__":
     # Выводим результат
     print("Хосты, которых нет в Zabbix:")
     for host in missing_hosts:
-        print(f"Имя: {host['name']} (Нормализованное имя: {host['normalized_name']}), IP: {host['ip']}")
+        print(f"Имя: {host['name']} (Нормализованное имя: {host['normalized_name']}), IP: {host['ip']}, Статус: {host['status']}")
 
     # Сохраняем результат сравнения в файл
     save_to_file(missing_hosts, "missing_hosts.json")
