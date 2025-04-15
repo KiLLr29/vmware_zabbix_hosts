@@ -1,60 +1,56 @@
-import atexit
 import json
-from pyVim.connect import SmartConnect, Disconnect
-from pyVmomi import vim
-import ssl
+import re
 
-# Импортируем настройки из файла config.py
-from config import VCENTER_HOST, VCENTER_USER, VCENTER_PASSWORD
-
-
-def get_vms_from_vcenter():
+def load_from_file(filename):
     """
-    Получает список виртуальных машин и их параметров из VCenter.
-    Экспортирует данные в формате: host, status (poweredOn/poweredOff), ip.
+    Загружает данные из файла в формате JSON.
     """
-    # Создаем контекст SSL для игнорирования ошибок сертификатов
-    context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-    context.check_hostname = False
-    context.verify_mode = ssl.CERT_NONE
+    with open(filename, "r") as f:
+        data = json.load(f)
+    return data
 
-    try:
-        # Подключаемся к VCenter
-        si = SmartConnect(
-            host=VCENTER_HOST,
-            user=VCENTER_USER,
-            pwd=VCENTER_PASSWORD,
-            sslContext=context
-        )
-        atexit.register(Disconnect, si)
-    except Exception as e:
-        print(f"Не удалось подключиться к VCenter. Ошибка: {e}")
-        return []
 
-    # Получаем корневой объект
-    content = si.RetrieveContent()
-    container = content.viewManager.CreateContainerView(
-        content.rootFolder, [vim.VirtualMachine], True
-    )
+def normalize_hostname(vcenter_name):
+    """
+    Нормализует имя хоста из VCenter для сравнения с именами в Zabbix.
+    Например, преобразует 'VW-SWX002-a.miller' в 'SWX002'.
+    """
+    # Используем регулярное выражение для извлечения базового имени
+    match = re.search(r"VW-(\w+)-", vcenter_name)
+    if match:
+        return match.group(1)  # Возвращаем часть, соответствующую шаблону
+    return vcenter_name  # Если шаблон не найден, возвращаем исходное имя
 
-    vms = []
-    for vm in container.view:
-        vm_name = vm.name
-        vm_power_state = vm.runtime.powerState  # Состояние питания хоста
-        vm_ip = None
 
-        # Получаем IP-адрес, если он доступен
-        if vm.guest and vm.guest.ipAddress:
-            vm_ip = vm.guest.ipAddress
+def find_missing_hosts(vcenter_vms, zabbix_hosts):
+    """
+    Сравнивает данные из VCenter и Zabbix и возвращает список хостов, которых нет в Zabbix.
+    Применяет фильтрацию и нормализацию имен для корректного сравнения.
+    """
+    missing_hosts = []
 
-        # Формируем объект с данными хоста
-        vms.append({
-            "host": vm_name,
-            "status": vm_power_state,
-            "ip": vm_ip
-        })
+    # Регулярные выражения для фильтрации
+    exclude_patterns = [
+        r"_REP$",  # Хосты, заканчивающиеся на "_REP"
+        r"^temp-",  # Хосты, начинающиеся на "temp-"
+    ]
 
-    return vms
+    for vm in vcenter_vms:
+        vm_name = vm["name"]
+        vm_ip = vm["ip"]
+
+        # Применяем нормализацию имени для сравнения
+        normalized_name = normalize_hostname(vm_name)
+
+        # Проверяем, соответствует ли имя хоста фильтру исключения
+        if any(re.search(pattern, vm_name) for pattern in exclude_patterns):
+            continue  # Пропускаем хост, если он соответствует фильтру
+
+        # Проверяем, есть ли хост с таким именем или IP в Zabbix
+        if normalized_name not in zabbix_hosts and (not vm_ip or vm_ip not in [ip for ips in zabbix_hosts.values() for ip in ips]):
+            missing_hosts.append({"name": vm_name, "normalized_name": normalized_name, "ip": vm_ip})
+
+    return missing_hosts
 
 
 def save_to_file(data, filename):
@@ -67,8 +63,17 @@ def save_to_file(data, filename):
 
 
 if __name__ == "__main__":
-    # Получаем данные из VCenter
-    vcenter_vms = get_vms_from_vcenter()
+    # Загружаем данные из файлов
+    vcenter_vms = load_from_file("vcenter_vms.json")
+    zabbix_hosts = load_from_file("zabbix_hosts.json")
 
-    # Сохраняем данные в файл
-    save_to_file(vcenter_vms, "vcenter_vms.json")
+    # Находим хосты, которых нет в Zabbix
+    missing_hosts = find_missing_hosts(vcenter_vms, zabbix_hosts)
+
+    # Выводим результат
+    print("Хосты, которых нет в Zabbix:")
+    for host in missing_hosts:
+        print(f"Имя: {host['name']} (Нормализованное имя: {host['normalized_name']}), IP: {host['ip']}")
+
+    # Сохраняем результат сравнения в файл
+    save_to_file(missing_hosts, "missing_hosts.json")
