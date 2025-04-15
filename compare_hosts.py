@@ -26,6 +26,7 @@ def find_missing_hosts(vcenter_vms, zabbix_hosts):
     """
     Сравнивает данные из VCenter и Zabbix и возвращает список хостов, которых нет в Zabbix.
     Применяет фильтрацию и нормализацию имен для корректного сравнения.
+    Исключает хосты со статусом poweredOff.
     """
     missing_hosts = []
 
@@ -40,12 +41,17 @@ def find_missing_hosts(vcenter_vms, zabbix_hosts):
         vm_ip = vm["ip"]      # IP-адрес хоста из VCenter
         vm_status = vm["status"]  # Состояние питания хоста
 
-        # Применяем нормализацию имени для сравнения
-        normalized_name = normalize_hostname(vm_name)
+        # Исключаем выключенные хосты
+        if vm_status == "poweredOff":
+            print(f"Пропущен выключенный хост: {vm_name}")
+            continue
 
         # Проверяем, соответствует ли имя хоста фильтру исключения
         if any(re.search(pattern, vm_name) for pattern in exclude_patterns):
             continue  # Пропускаем хост, если он соответствует фильтру
+
+        # Применяем нормализацию имени для сравнения
+        normalized_name = normalize_hostname(vm_name)
 
         # Проверяем, есть ли хост с таким именем или IP в Zabbix
         if normalized_name not in zabbix_hosts and (not vm_ip or vm_ip not in [ip for ips in zabbix_hosts.values() for ip in ips]):
