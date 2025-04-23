@@ -9,19 +9,27 @@ from config import ZABBIX_URL, ZABBIX_USER, ZABBIX_PASSWORD
 def get_hosts_from_zabbix():
     """
     Получает список хостов из Zabbix.
+    Экспортирует данные в формате: host, status (enabled/disabled), ip.
     """
     zapi = ZabbixAPI(ZABBIX_URL)
     zapi.login(ZABBIX_USER, ZABBIX_PASSWORD)
 
     # Получаем список хостов и их интерфейсов
-    hosts = zapi.host.get(output=["host"], selectInterfaces=["ip"])
-    zabbix_hosts = defaultdict(list)
+    hosts = zapi.host.get(output=["host", "status"], selectInterfaces=["ip"])
+    zabbix_hosts = []
 
     for host in hosts:
         hostname = host["host"]
+        host_status = "enabled" if host["status"] == "0" else "disabled"
         interfaces = host.get("interfaces", [])  # Используем .get() для безопасного доступа
         ip_addresses = [interface["ip"] for interface in interfaces if "ip" in interface]
-        zabbix_hosts[hostname] = ip_addresses
+
+        # Формируем объект с данными хоста
+        zabbix_hosts.append({
+            "host": hostname,
+            "status": host_status,
+            "ip": ip_addresses[0] if ip_addresses else None  # Берем первый IP, если он есть
+        })
 
     return zabbix_hosts
 
