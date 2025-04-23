@@ -65,15 +65,27 @@ def get_hostgroup_id(zapi, group_name):
 def add_hosts_to_group(zapi, hosts, group_id):
     """
     Добавляет хосты в указанную группу, сохраняя их текущие группы.
+    Пропускает хосты со статусом poweredOff.
     :param zapi: Объект Zabbix API.
-    :param hosts: Список хостов (имена).
+    :param hosts: Список хостов (имена и статусы).
     :param group_id: ID группы хостов.
     """
-    for host_name in hosts:
+    for host in hosts:
+        host_name = host["host"]
+        vm_status = host["status"]
+
+        # Пропускаем хосты со статусом poweredOff
+        if vm_status == "poweredOff":
+            logging.info(f"Хост '{host_name}' выключен в VCenter. Пропускаем.")
+            continue
+
+        # Нормализуем имя хоста
+        normalized_name = normalize_hostname(host_name)
+
         # Проверяем, существует ли хост в Zabbix
-        zabbix_hosts = zapi.host.get(filter={"host": host_name}, selectGroups=["groupid"], output=["hostid"])
+        zabbix_hosts = zapi.host.get(filter={"host": normalized_name}, selectGroups=["groupid"], output=["hostid"])
         if not zabbix_hosts:
-            logging.warning(f"Хост '{host_name}' не найден в Zabbix. Пропускаем.")
+            logging.warning(f"Хост '{normalized_name}' не найден в Zabbix. Пропускаем.")
             continue
 
         host_id = zabbix_hosts[0]["hostid"]
@@ -81,7 +93,7 @@ def add_hosts_to_group(zapi, hosts, group_id):
 
         # Проверяем, состоит ли хост уже в группе 'vcenter_hosts'
         if group_id in current_groups:
-            logging.info(f"Хост '{host_name}' уже состоит в группе 'vcenter_hosts'. Пропускаем.")
+            logging.info(f"Хост '{normalized_name}' уже состоит в группе 'vcenter_hosts'. Пропускаем.")
             continue
 
         # Добавляем группу 'vcenter_hosts' к текущим группам
@@ -89,7 +101,7 @@ def add_hosts_to_group(zapi, hosts, group_id):
 
         # Обновляем группы хоста
         zapi.host.update(hostid=host_id, groups=[{"groupid": gid} for gid in updated_groups])
-        logging.info(f"Группа 'vcenter_hosts' добавлена к хосту '{host_name}'")
+        logging.info(f"Группа 'vcenter_hosts' добавлена к хосту '{normalized_name}'")
 
 
 if __name__ == "__main__":
@@ -107,11 +119,8 @@ if __name__ == "__main__":
         # Загружаем список хостов из JSON-файла
         vcenter_vms = load_hosts_from_file("vcenter_vms.json")
 
-        # Нормализуем имена хостов
-        normalized_hosts = [normalize_hostname(vm["host"]) for vm in vcenter_vms]
-
         # Добавляем хосты в группу
-        add_hosts_to_group(zapi, normalized_hosts, group_id)
+        add_hosts_to_group(zapi, vcenter_vms, group_id)
 
     except Exception as e:
         logging.error(f"Произошла ошибка: {e}")
