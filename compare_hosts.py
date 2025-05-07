@@ -4,9 +4,9 @@ import os
 import logging
 
 # Настройка логирования
-log_dir = "./logs"
+log_dir = "/var/log/zabbix"
 os.makedirs(log_dir, exist_ok=True)
-log_file = os.path.join(log_dir, "zabbix_missing_hosts.log")
+log_file = os.path.join(log_dir, "zabbix_scripts_zabbix_missing_hosts.log")
 
 logging.basicConfig(
     level=logging.INFO,

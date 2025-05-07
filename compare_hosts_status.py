@@ -4,9 +4,9 @@ import logging
 import os
 
 # Создание директории для логов в локальной папке
-log_dir = "./logs"
+log_dir = "/var/log/zabbix"
 os.makedirs(log_dir, exist_ok=True)
-log_file = os.path.join(log_dir, "zabbix_vm_sync.log")
+log_file = os.path.join(log_dir, "zabbix_scripts_zabbix_vm_sync.log")
 
 # Настройка логирования
 logging.basicConfig(

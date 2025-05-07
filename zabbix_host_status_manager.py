@@ -6,7 +6,7 @@ from pyzabbix import ZabbixAPI
 from config import ZABBIX_URL, ZABBIX_USER, ZABBIX_PASSWORD
 
 # Настройка логирования
-log_file = "/var/log/zabbix/zabbix_script_status_manager.log"
+log_file = "/var/log/zabbix/zabbix_scripts_status_manager.log"
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s",
