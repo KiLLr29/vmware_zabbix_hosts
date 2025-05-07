@@ -1,11 +1,27 @@
 import atexit
 import json
+import ssl
+import logging
+import os
 from pyVim.connect import SmartConnect, Disconnect
 from pyVmomi import vim
-import ssl
 
-# Импортируем настройки из файла config.py
+# Импорт настроек из config.py
 from config import VCENTER_HOST, VCENTER_USER, VCENTER_PASSWORD
+
+# Настройка логирования
+log_dir = "/var/log/zabbix"
+os.makedirs(log_dir, exist_ok=True)
+log_file = os.path.join(log_dir, "zabbix_scripts_vcenter_vm_export.log")
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    handlers=[
+        logging.FileHandler(log_file),
+        logging.StreamHandler()
+    ]
+)
 
 
 def get_vms_from_vcenter():
@@ -13,13 +29,11 @@ def get_vms_from_vcenter():
     Получает список виртуальных машин и их параметров из VCenter.
     Экспортирует данные в формате: host, status (poweredOn/poweredOff), ip.
     """
-    # Создаем контекст SSL для игнорирования ошибок сертификатов
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
     context.check_hostname = False
     context.verify_mode = ssl.CERT_NONE
 
     try:
-        # Подключаемся к VCenter
         si = SmartConnect(
             host=VCENTER_HOST,
             user=VCENTER_USER,
@@ -27,48 +41,58 @@ def get_vms_from_vcenter():
             sslContext=context
         )
         atexit.register(Disconnect, si)
+        logging.info(f"Успешное подключение к VCenter: {VCENTER_HOST}")
     except Exception as e:
-        print(f"Не удалось подключиться к VCenter. Ошибка: {e}")
+        logging.error(f"Не удалось подключиться к VCenter: {e}")
         return []
 
-    # Получаем корневой объект
-    content = si.RetrieveContent()
-    container = content.viewManager.CreateContainerView(
-        content.rootFolder, [vim.VirtualMachine], True
-    )
-
     vms = []
-    for vm in container.view:
-        vm_name = vm.name
-        vm_power_state = vm.runtime.powerState  # Состояние питания хоста
-        vm_ip = None
+    try:
+        content = si.RetrieveContent()
+        container = content.viewManager.CreateContainerView(
+            content.rootFolder, [vim.VirtualMachine], True
+        )
 
-        # Получаем IP-адрес, если он доступен
-        if vm.guest and vm.guest.ipAddress:
-            vm_ip = vm.guest.ipAddress
+        for vm in container.view:
+            try:
+                vm_name = vm.name
+                vm_power_state = vm.runtime.powerState
+                vm_ip = vm.guest.ipAddress if vm.guest and vm.guest.ipAddress else None
 
-        # Формируем объект с данными хоста
-        vms.append({
-            "host": vm_name,
-            "status": vm_power_state,
-            "ip": vm_ip
-        })
+                vms.append({
+                    "host": vm_name,
+                    "status": vm_power_state,
+                    "ip": vm_ip
+                })
 
-    return vms
+                logging.debug(f"VM: {vm_name}, status: {vm_power_state}, ip: {vm_ip}")
+            except Exception as vm_err:
+                logging.warning(f"Ошибка при обработке VM: {vm_err}")
+
+        logging.info(f"Успешно получено {len(vms)} виртуальных машин.")
+        return vms
+
+    except Exception as e:
+        logging.error(f"Ошибка при извлечении данных о VM: {e}")
+        return []
 
 
 def save_to_file(data, filename):
     """
     Сохраняет данные в файл в формате JSON.
     """
-    with open(filename, "w") as f:
-        json.dump(data, f, indent=4, ensure_ascii=False)
-    print(f"Данные успешно сохранены в файл: {filename}")
+    try:
+        with open(filename, "w") as f:
+            json.dump(data, f, indent=4, ensure_ascii=False)
+        logging.info(f"Данные успешно сохранены в файл: {filename}")
+    except Exception as e:
+        logging.error(f"Ошибка при сохранении данных в файл: {e}")
+        raise
 
 
 if __name__ == "__main__":
-    # Получаем данные из VCenter
-    vcenter_vms = get_vms_from_vcenter()
-
-    # Сохраняем данные в файл
-    save_to_file(vcenter_vms, "vcenter_vms.json")
+    try:
+        vcenter_vms = get_vms_from_vcenter()
+        save_to_file(vcenter_vms, "vcenter_vms.json")
+    except Exception as e:
+        logging.critical(f"Критическая ошибка выполнения: {e}")
