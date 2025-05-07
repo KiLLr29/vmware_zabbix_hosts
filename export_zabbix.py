@@ -22,18 +22,18 @@ logging.basicConfig(
 def get_hosts_from_zabbix():
     """
     Получает список хостов из Zabbix.
-    Экспортирует данные в формате: host, status (enabled/disabled), ip.
+    Экспортирует данные в формате: hostname, status (enabled/disabled), ip.
     """
     try:
         zapi = ZabbixAPI(ZABBIX_URL)
         zapi.login(ZABBIX_USER, ZABBIX_PASSWORD)
         logging.info("Успешное подключение к Zabbix API.")
 
-        hosts = zapi.host.get(output=["host", "status"], selectInterfaces=["ip"])
+        hosts = zapi.host.get(output=["name", "status"], selectInterfaces=["ip"])
         zabbix_hosts = []
 
         for host in hosts:
-            hostname = host["host"]
+            hostname = host["name"]
             host_status = "enabled" if host["status"] == "0" else "disabled"
             interfaces = host.get("interfaces", [])
             ip_addresses = [interface["ip"] for interface in interfaces if "ip" in interface]
