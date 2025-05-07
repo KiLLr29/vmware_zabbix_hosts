@@ -5,9 +5,9 @@ from pyzabbix import ZabbixAPI
 from config import ZABBIX_URL, ZABBIX_USER, ZABBIX_PASSWORD
 
 # Настройка логирования
-log_dir = "./logs"
+log_dir = "/var/log/zabbix"
 os.makedirs(log_dir, exist_ok=True)
-log_file = os.path.join(log_dir, "zabbix_export_hosts.log")
+log_file = os.path.join(log_dir, "zabbix_scripts_zabbix_export_hosts.log")
 
 logging.basicConfig(
     level=logging.INFO,
