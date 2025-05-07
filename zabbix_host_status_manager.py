@@ -13,6 +13,7 @@ logging.basicConfig(
     handlers=[logging.FileHandler(log_file), logging.StreamHandler()]
 )
 
+
 def load_hosts_from_file(filename):
     """
     Загружает список хостов из JSON-файла.
@@ -38,6 +39,19 @@ def connect_to_zabbix():
         raise
 
 
+def determine_status(vmware_status):
+    """
+    Определяет статус Zabbix в зависимости от статуса VMware.
+    """
+    if vmware_status == "poweredOff":
+        return 1
+    elif vmware_status == "poweredOn":
+        return 0
+    else:
+        logging.warning(f"Неизвестный статус VMware: {vmware_status}")
+        return None
+
+
 def change_host_status(zapi, host_name, status):
     """
     Меняет статус хоста в Zabbix.
@@ -47,41 +61,44 @@ def change_host_status(zapi, host_name, status):
     """
     try:
         # Получаем ID хоста по имени
-        hosts = zapi.host.get(filter={"host": host_name}, output=["hostid"])
+        hosts = zapi.host.get(filter={"host": host_name}, output=["hostid", "status"])
         if not hosts:
             logging.error(f"Хост '{host_name}' не найден в Zabbix.")
             return
 
-        host_id = hosts[0]["hostid"]
+        host_info = hosts[0]
+        host_id = host_info["hostid"]
+
+        # Проверка — если статус не меняется, пропускаем
+        if int(host_info["status"]) == status:
+            logging.info(f"Хост '{host_name}' уже имеет статус {'enabled' if status == 0 else 'disabled'} — пропуск.")
+            return
 
         # Меняем статус хоста
         zapi.host.update(hostid=host_id, status=status)
-        new_status = "enabled" if status == "0" else "disabled"
+        new_status = "enabled" if status == 0 else "disabled"
         logging.info(f"Статус хоста '{host_name}' изменен на {new_status}")
     except Exception as e:
         logging.error(f"Ошибка при изменении статуса хоста '{host_name}': {e}")
 
 
 if __name__ == "__main__":
-    # Пример использования
     try:
-        # Подключаемся к Zabbix
         zapi = connect_to_zabbix()
-
-        # Загружаем список хостов из JSON-файла
         mismatched_hosts = load_hosts_from_file("mismatched_hosts.json")
 
         for host in mismatched_hosts:
+            if "host" not in host or "vmware_status" not in host:
+                logging.warning(f"Пропущен объект с неверной структурой: {host}")
+                continue
+
             host_name = host["host"]
             vmware_status = host["vmware_status"]
+            new_status = determine_status(vmware_status)
 
-            # Определяем новый статус для Zabbix
-            if vmware_status == "poweredOff":
-                new_status = "1"  # Выключить хост в Zabbix
-            elif vmware_status == "poweredOn":
-                new_status = "0"  # Включить хост в Zabbix
+            if new_status is None:
+                continue
 
-            # Меняем статус хоста
             change_host_status(zapi, host_name, new_status)
 
     except Exception as e:
