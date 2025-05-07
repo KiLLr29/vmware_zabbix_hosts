@@ -1,13 +1,35 @@
 import json
 import re
+import os
+import logging
+
+# Настройка логирования
+log_dir = "./logs"
+os.makedirs(log_dir, exist_ok=True)
+log_file = os.path.join(log_dir, "zabbix_missing_hosts.log")
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    handlers=[
+        logging.FileHandler(log_file),
+        logging.StreamHandler()
+    ]
+)
+
 
 def load_from_file(filename):
     """
     Загружает данные из файла в формате JSON.
     """
-    with open(filename, "r") as f:
-        data = json.load(f)
-    return data
+    try:
+        with open(filename, "r") as f:
+            data = json.load(f)
+        logging.info(f"Файл успешно загружен: {filename}")
+        return data
+    except Exception as e:
+        logging.error(f"Ошибка при загрузке файла {filename}: {e}")
+        raise
 
 
 def normalize_hostname(vcenter_name):
@@ -15,52 +37,56 @@ def normalize_hostname(vcenter_name):
     Нормализует имя хоста из VCenter для сравнения с именами в Zabbix.
     Например, преобразует 'VW-SWX002-a.miller' в 'SWX002'.
     """
-    # Используем регулярное выражение для извлечения базового имени
     match = re.search(r"VW-(\w+)-", vcenter_name)
     if match:
-        return match.group(1)  # Возвращаем часть, соответствующую шаблону
-    return vcenter_name  # Если шаблон не найден, возвращаем исходное имя
+        normalized = match.group(1)
+        logging.debug(f"Нормализовано имя '{vcenter_name}' → '{normalized}'")
+        return normalized
+    logging.debug(f"Имя без нормализации: {vcenter_name}")
+    return vcenter_name
 
 
-def find_missing_hosts(vcenter_vms, zabbix_hosts):
+def find_missing_hosts(vcenter_vms, zabbix_hosts_dict):
     """
     Сравнивает данные из VCenter и Zabbix и возвращает список хостов, которых нет в Zabbix.
-    Применяет фильтрацию и нормализацию имен для корректного сравнения.
-    Исключает хосты со статусом poweredOff.
+    Исключает poweredOff и фильтруемые по имени.
     """
     missing_hosts = []
 
-    # Регулярные выражения для фильтрации
     exclude_patterns = [
-        r"_REP$",  # Хосты, заканчивающиеся на "_REP"
-        r"^temp-",  # Хосты, начинающиеся на "temp-"
-        r"^Temp", # Хосты, начинающиеся на "Temp-"
+        r"_REP$", r"^temp-", r"^Temp"
     ]
 
-    for vm in vcenter_vms:
-        vm_name = vm["host"]  # Имя хоста из VCenter
-        vm_ip = vm["ip"]      # IP-адрес хоста из VCenter
-        vm_status = vm["status"]  # Состояние питания хоста
+    all_zabbix_ips = {ip for ip_list in zabbix_hosts_dict.values() for ip in ip_list}
+    known_hosts = set(zabbix_hosts_dict.keys())
 
-        # Исключаем выключенные хосты
-        if vm_status == "poweredOff":
-            print(f"Пропущен выключенный хост: {vm_name}")
+    for vm in vcenter_vms:
+        vm_name = vm.get("host")
+        vm_ip = vm.get("ip")
+        vm_status = vm.get("status")
+
+        if not vm_name or not vm_status:
+            logging.warning(f"Пропущена VM из-за неполных данных: {vm}")
             continue
 
-        # Проверяем, соответствует ли имя хоста фильтру исключения
-        if any(re.search(pattern, vm_name) for pattern in exclude_patterns):
-            continue  # Пропускаем хост, если он соответствует фильтру
+        if vm_status == "poweredOff":
+            logging.info(f"Пропущен выключенный хост: {vm_name}")
+            continue
 
-        # Применяем нормализацию имени для сравнения
+        if any(re.search(pattern, vm_name) for pattern in exclude_patterns):
+            logging.info(f"Хост исключён по шаблону: {vm_name}")
+            continue
+
         normalized_name = normalize_hostname(vm_name)
 
-        # Проверяем, есть ли хост с таким именем или IP в Zabbix
-        if normalized_name not in zabbix_hosts and (not vm_ip or vm_ip not in [ip for ips in zabbix_hosts.values() for ip in ips]):
+        if normalized_name not in known_hosts and (not vm_ip or vm_ip not in all_zabbix_ips):
             missing_hosts.append({
                 "host": vm_name,
                 "ip": vm_ip
             })
+            logging.info(f"Найден отсутствующий хост: {vm_name} ({vm_ip})")
 
+    logging.info(f"Всего отсутствующих хостов: {len(missing_hosts)}")
     return missing_hosts
 
 
@@ -68,22 +94,32 @@ def save_to_file(data, filename):
     """
     Сохраняет данные в файл в формате JSON.
     """
-    with open(filename, "w") as f:
-        json.dump(data, f, indent=4, ensure_ascii=False)
-    print(f"Данные успешно сохранены в файл: {filename}")
+    try:
+        with open(filename, "w") as f:
+            json.dump(data, f, indent=4, ensure_ascii=False)
+        logging.info(f"Данные успешно сохранены в файл: {filename}")
+    except Exception as e:
+        logging.error(f"Ошибка при сохранении в файл {filename}: {e}")
+        raise
 
 
 if __name__ == "__main__":
-    # Загружаем данные из файлов
-    vcenter_vms = load_from_file("vcenter_vms.json")
-    zabbix_hosts = load_from_file("zabbix_hosts.json")
+    try:
+        vcenter_vms = load_from_file("vcenter_vms.json")
+        zabbix_hosts_list = load_from_file("zabbix_hosts.json")
 
-    # Находим хосты, которых нет в Zabbix
-    missing_hosts = find_missing_hosts(vcenter_vms, zabbix_hosts)
+        # Преобразуем список Zabbix-хостов в словарь: host → [ip]
+        zabbix_hosts = {
+            host["host"]: [host["ip"]] if host.get("ip") else []
+            for host in zabbix_hosts_list if "host" in host
+        }
 
-    # Выводим результат в формате JSON
-    print("Хосты, которых нет в Zabbix:")
-    print(json.dumps(missing_hosts, indent=4, ensure_ascii=False))
+        missing_hosts = find_missing_hosts(vcenter_vms, zabbix_hosts)
 
-    # Сохраняем результат сравнения в файл
-    save_to_file(missing_hosts, "missing_hosts.json")
+        print("Хосты, которых нет в Zabbix:")
+        print(json.dumps(missing_hosts, indent=4, ensure_ascii=False))
+
+        save_to_file(missing_hosts, "missing_hosts.json")
+
+    except Exception as e:
+        logging.critical(f"Скрипт завершился с ошибкой: {e}")

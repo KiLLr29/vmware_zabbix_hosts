@@ -1,9 +1,22 @@
 import json
+import logging
+import os
 from pyzabbix import ZabbixAPI
-from collections import defaultdict
-
-# Импортируем настройки из файла config.py
 from config import ZABBIX_URL, ZABBIX_USER, ZABBIX_PASSWORD
+
+# Настройка логирования
+log_dir = "./logs"
+os.makedirs(log_dir, exist_ok=True)
+log_file = os.path.join(log_dir, "zabbix_export_hosts.log")
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    handlers=[
+        logging.FileHandler(log_file),
+        logging.StreamHandler()
+    ]
+)
 
 
 def get_hosts_from_zabbix():
@@ -11,41 +24,50 @@ def get_hosts_from_zabbix():
     Получает список хостов из Zabbix.
     Экспортирует данные в формате: host, status (enabled/disabled), ip.
     """
-    zapi = ZabbixAPI(ZABBIX_URL)
-    zapi.login(ZABBIX_USER, ZABBIX_PASSWORD)
+    try:
+        zapi = ZabbixAPI(ZABBIX_URL)
+        zapi.login(ZABBIX_USER, ZABBIX_PASSWORD)
+        logging.info("Успешное подключение к Zabbix API.")
 
-    # Получаем список хостов и их интерфейсов
-    hosts = zapi.host.get(output=["host", "status"], selectInterfaces=["ip"])
-    zabbix_hosts = []
+        hosts = zapi.host.get(output=["host", "status"], selectInterfaces=["ip"])
+        zabbix_hosts = []
 
-    for host in hosts:
-        hostname = host["host"]
-        host_status = "enabled" if host["status"] == "0" else "disabled"
-        interfaces = host.get("interfaces", [])  # Используем .get() для безопасного доступа
-        ip_addresses = [interface["ip"] for interface in interfaces if "ip" in interface]
+        for host in hosts:
+            hostname = host["host"]
+            host_status = "enabled" if host["status"] == "0" else "disabled"
+            interfaces = host.get("interfaces", [])
+            ip_addresses = [interface["ip"] for interface in interfaces if "ip" in interface]
 
-        # Формируем объект с данными хоста
-        zabbix_hosts.append({
-            "host": hostname,
-            "status": host_status,
-            "ip": ip_addresses[0] if ip_addresses else None  # Берем первый IP, если он есть
-        })
+            zabbix_hosts.append({
+                "host": hostname,
+                "status": host_status,
+                "ip": ip_addresses[0] if ip_addresses else None
+            })
 
-    return zabbix_hosts
+        logging.info(f"Получено {len(zabbix_hosts)} хостов из Zabbix.")
+        return zabbix_hosts
+
+    except Exception as e:
+        logging.error(f"Ошибка при получении хостов из Zabbix: {e}")
+        raise
 
 
 def save_to_file(data, filename):
     """
     Сохраняет данные в файл в формате JSON.
     """
-    with open(filename, "w") as f:
-        json.dump(data, f, indent=4, ensure_ascii=False)
-    print(f"Данные успешно сохранены в файл: {filename}")
+    try:
+        with open(filename, "w") as f:
+            json.dump(data, f, indent=4, ensure_ascii=False)
+        logging.info(f"Данные успешно сохранены в файл: {filename}")
+    except Exception as e:
+        logging.error(f"Ошибка при сохранении в файл {filename}: {e}")
+        raise
 
 
 if __name__ == "__main__":
-    # Получаем данные из Zabbix
-    zabbix_hosts = get_hosts_from_zabbix()
-
-    # Сохраняем данные в файл
-    save_to_file(zabbix_hosts, "zabbix_hosts.json")
+    try:
+        zabbix_hosts = get_hosts_from_zabbix()
+        save_to_file(zabbix_hosts, "zabbix_hosts.json")
+    except Exception as e:
+        logging.critical(f"Скрипт завершился с ошибкой: {e}")
