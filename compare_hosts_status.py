@@ -44,11 +44,11 @@ def find_mismatched_hosts(vcenter_vms, zabbix_hosts):
     for vm in vcenter_vms:
         vm_name = vm.get("host")
         vm_status = vm.get("status")
-        vm_ip = vm.get("ip")
+        vm_ip = vm.get("ip") if "ip" in vm else None
 
-        if not vm_name or not vm_status or not vm_ip:
-            logging.warning(f"Пропущена VM из-за отсутствующих данных: {vm}")
-            continue
+        # Не исключаем из-за отсутствия IP!
+        if not vm_name or not vm_status:
+            continue  # Без логирования
 
         normalized_name = normalize_hostname(vm_name)
 
@@ -61,12 +61,10 @@ def find_mismatched_hosts(vcenter_vms, zabbix_hosts):
 
                 mismatched_hosts.append({
                     "host": normalized_name,
-                    "ip": vm_ip,
+                    "ip": vm_ip if vm_ip else "нет IP",
                     "vmware_status": vm_status,
                     "zabbix_status": z_status
                 })
-                logging.info(f"Найдено несоответствие: {normalized_name} (VMware: {vm_status}, Zabbix: {z_status})")
-
     logging.info(f"Обнаружено {len(mismatched_hosts)} хостов с несоответствием статусов.")
     return mismatched_hosts
 
